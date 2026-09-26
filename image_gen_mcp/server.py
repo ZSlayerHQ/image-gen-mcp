@@ -26,6 +26,7 @@ from .resources.prompt_templates import prompt_template_resource_manager
 from .storage.manager import ImageStorageManager
 from .tools.image_editing import ImageEditingTool
 from .tools.image_generation import ImageGenerationTool
+from .utils.openai_client import OpenAIClientManager
 from .utils.cache import CacheManager
 from .utils.path_utils import find_existing_image_path
 from .utils.validators import (
@@ -205,6 +206,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
         storage_manager=storage_manager,
         cache_manager=cache_manager,
         settings=settings,
+        openai_client=OpenAIClientManager(settings.providers.openai),
     )
 
     resource_manager = ImageResourceManager(

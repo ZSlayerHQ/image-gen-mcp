@@ -116,6 +116,17 @@ class OpenAIClientManager:
     ) -> ImagesResponse:
         """Edit an image using OpenAI's Images API."""
 
+        # Coerce enum inputs (ImageQuality, ImageSize, ImageFormat, etc.) to
+        # their string values so the OpenAI SDK receives valid literals
+        # ("high", "png", ...) instead of enum reprs ("ImageQuality.HIGH").
+        # The generation path does this inside OpenAIProvider; the edit path
+        # goes through this client, so coerce here.
+        quality = getattr(quality, "value", quality)
+        size = getattr(size, "value", size)
+        output_format = getattr(output_format, "value", output_format)
+        background = getattr(background, "value", background)
+        model = getattr(model, "value", model)
+
         from . import prepare_image_upload
 
         # Decode inputs and build SDK upload tuples.

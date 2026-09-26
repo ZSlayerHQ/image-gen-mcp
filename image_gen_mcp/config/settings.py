@@ -16,7 +16,7 @@ class OpenAISettings(BaseModel):
     base_url: str = Field(
         "https://api.openai.com/v1", description="OpenAI API base URL"
     )
-    timeout: float = Field(30.0, gt=0, description="Request timeout in seconds")
+    timeout: float = Field(180.0, gt=0, description="Request timeout in seconds")
     max_retries: int = Field(3, ge=0, description="Maximum number of retries")
     enabled: bool = Field(True, description="Enable OpenAI provider")
 
