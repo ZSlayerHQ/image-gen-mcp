@@ -126,7 +126,7 @@ PROVIDERS__GEMINI__API_KEY=您的Gemini密钥
 PROVIDERS__GEMINI__ENABLED=true
 
 # 图片设置
-IMAGES__DEFAULT_MODEL=gpt-image-1
+IMAGES__DEFAULT_MODEL=gpt-image-2.5-sunburst
 IMAGES__DEFAULT_QUALITY=high
 IMAGES__DEFAULT_SIZE=1536x1024
 ```
@@ -134,13 +134,18 @@ IMAGES__DEFAULT_SIZE=1536x1024
 ### 支持的模型
 
 **OpenAI模型：**
-- `gpt-image-1`：最新最强的图片生成模型
-- `dall-e-3`：高质量创意图片生成
-- `dall-e-2`：经典图片生成模型
+- `gpt-image-2.5-sunburst`（默认）：OpenAI 画质最高的图片模型（2026年9月），适合精确编辑和招牌、海报上的准确文字
+- `gpt-image-2.5-flare`：GPT Image 2.5 的快速模型，适合日常和大批量生成
+- `gpt-image-2`：上一代旗舰模型，支持最高 4K 的灵活尺寸
+- `gpt-image-1.5`、`gpt-image-1`：较早的 GPT Image 模型，仅支持预设尺寸
+- `dall-e-3`、`dall-e-2`：仍在列表中，但 OpenAI 已于 2026年5月12日从 API 中移除
+
+两个 GPT Image 2.5 模型新增 `xhigh` 和 `max` 质量档位。如需在图片中生成准确文字，请用引号写出原文，并说明字体、位置和语言（详见 [Getting Exact Text in Images](docs/openai_images_api_guide.md#getting-exact-text-in-images)）。
 
 **Google Gemini模型：**
 - `imagen-4`：Google最新图片生成模型
 - `imagen-4-ultra`：增强版高质量模型
+- `imagen-4-fast`：更快、更低成本的 Imagen 4
 - `imagen-3`：上一代稳定模型
 
 ## 💡 使用技巧

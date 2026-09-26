@@ -273,3 +273,160 @@ class TestValidateModelParamsSize:
             "gpt-image-1", {"size": "  1024X1024  "}
         )
         assert params["size"] == "1024x1024"
+
+
+GPT_IMAGE_2_5_IDS = ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst")
+
+
+class TestGptImage25Registration:
+    """GPT Image 2.5 (2026-09-08): gpt-image-2 sizing, native transparency,
+    and the new xhigh / max quality tiers."""
+
+    @pytest.mark.parametrize("model_id", GPT_IMAGE_2_5_IDS)
+    def test_registered(self, model_id):
+        assert model_id in OpenAIProvider.SUPPORTED_MODELS
+        assert OpenAIProvider.SUPPORTED_MODELS[model_id].model_id == model_id
+
+    @pytest.mark.parametrize("model_id", GPT_IMAGE_2_5_IDS)
+    def test_capabilities(self, model_id):
+        cap = OpenAIProvider.SUPPORTED_MODELS[model_id]
+        assert set(cap.supported_qualities) == {
+            "auto", "low", "medium", "high", "xhigh", "max",
+        }
+        assert cap.supported_qualities[0] == "auto"
+        assert cap.supports_custom_sizes is True
+        assert cap.size_constraints == (
+            OpenAIProvider.SUPPORTED_MODELS["gpt-image-2"].size_constraints
+        )
+        assert "3840x2160" in cap.supported_sizes
+        assert cap.supported_formats == ["png", "jpeg", "webp"]
+        assert "transparent" in cap.custom_parameters["background"]
+
+    def test_older_models_lack_new_quality_tiers(self):
+        for mid in ("gpt-image-1", "gpt-image-1.5", "gpt-image-2"):
+            qualities = OpenAIProvider.SUPPORTED_MODELS[mid].supported_qualities
+            assert "xhigh" not in qualities
+            assert "max" not in qualities
+
+    @pytest.mark.parametrize("model_id", GPT_IMAGE_2_5_IDS)
+    def test_transparent_background_passes_through(self, provider, model_id):
+        """Unlike gpt-image-2, the 2.5 models support transparency natively."""
+        assert provider._resolve_background("transparent", model_id) == "transparent"
+
+    @pytest.mark.parametrize("model_id", GPT_IMAGE_2_5_IDS)
+    def test_custom_size_allowed(self, provider, model_id):
+        cap = OpenAIProvider.SUPPORTED_MODELS[model_id]
+        assert provider._resolve_size("2048x1152", cap, model_id) == "2048x1152"
+        assert provider._resolve_size("9999x9999", cap, model_id) == "auto"
+
+
+class TestResolveQuality:
+    @pytest.mark.parametrize("model_id", GPT_IMAGE_2_5_IDS)
+    @pytest.mark.parametrize("quality", ["xhigh", "max", "high", "low", "auto"])
+    def test_2_5_models_keep_every_tier(self, provider, model_id, quality):
+        cap = OpenAIProvider.SUPPORTED_MODELS[model_id]
+        assert provider._resolve_quality(quality, cap, model_id) == quality
+
+    @pytest.mark.parametrize(
+        "model_id", ["gpt-image-1", "gpt-image-1.5", "gpt-image-2"]
+    )
+    @pytest.mark.parametrize("quality", ["xhigh", "max"])
+    def test_new_tiers_step_down_to_high_on_older_models(
+        self, provider, model_id, quality
+    ):
+        cap = OpenAIProvider.SUPPORTED_MODELS[model_id]
+        assert provider._resolve_quality(quality, cap, model_id) == "high"
+
+    def test_unknown_quality_falls_back_to_auto(self, provider):
+        cap = OpenAIProvider.SUPPORTED_MODELS["gpt-image-2.5-sunburst"]
+        assert (
+            provider._resolve_quality("ultra", cap, "gpt-image-2.5-sunburst")
+            == "auto"
+        )
+
+    def test_enum_quality_unwrapped(self, provider):
+        from image_gen_mcp.types.enums import ImageQuality
+
+        cap = OpenAIProvider.SUPPORTED_MODELS["gpt-image-2.5-flare"]
+        resolved = provider._resolve_quality(
+            ImageQuality.XHIGH, cap, "gpt-image-2.5-flare"
+        )
+        assert resolved == "xhigh"
+        assert type(resolved) is str
+
+    def test_validate_model_params_steps_down_for_gpt_image_2(self, provider):
+        """The base validator alone would send 'max' to 'auto'; the OpenAI
+        provider steps it down to the nearest tier the model has."""
+        params = provider.validate_model_params("gpt-image-2", {"quality": "max"})
+        assert params["quality"] == "high"
+
+    def test_validate_model_params_keeps_max_for_sunburst(self, provider):
+        params = provider.validate_model_params(
+            "gpt-image-2.5-sunburst", {"quality": "max"}
+        )
+        assert params["quality"] == "max"
+
+
+class TestEstimateCostGptImage25:
+    """Output tokens follow OpenAI's GptImageTokenCalculator for GPT Image
+    2.5 (one table for both models). Expected values were checked against
+    the calculator's own JavaScript on 2026-09-27."""
+
+    @pytest.mark.parametrize(
+        "quality,size,tokens",
+        [
+            ("low", "1024x1024", 196),
+            ("medium", "1024x1024", 439),
+            ("high", "1024x1024", 1756),
+            ("xhigh", "1024x1024", 3122),
+            ("max", "1024x1024", 7024),
+            ("low", "1536x1024", 158),
+            ("high", "1024x1536", 1372),
+            ("max", "3840x2160", 13342),
+            ("xhigh", "1536x864", 1917),
+            ("medium", "1024x3072", 247),
+        ],
+    )
+    @pytest.mark.parametrize("model_id", GPT_IMAGE_2_5_IDS)
+    def test_tokens_match_openai_calculator(
+        self, provider, model_id, quality, size, tokens
+    ):
+        result = provider.estimate_cost(
+            model_id, "x", image_count=1, quality=quality, size=size
+        )
+        assert result["breakdown"]["tokens_per_image"] == tokens
+        assert result["breakdown"]["image_output_cost"] == pytest.approx(
+            round(tokens * 30 / 1_000_000, 4)
+        )
+        assert result["estimate_accuracy"] == "rough"
+
+    def test_auto_quality_estimated_as_medium(self, provider):
+        auto = provider.estimate_cost(
+            "gpt-image-2.5-sunburst", "x", quality="auto", size="1024x1024"
+        )["breakdown"]["tokens_per_image"]
+        medium = provider.estimate_cost(
+            "gpt-image-2.5-sunburst", "x", quality="medium", size="1024x1024"
+        )["breakdown"]["tokens_per_image"]
+        assert auto == medium
+
+    def test_auto_size_estimated_at_1024_square(self, provider):
+        auto = provider.estimate_cost(
+            "gpt-image-2.5-flare", "x", quality="high", size="auto"
+        )["breakdown"]["tokens_per_image"]
+        assert auto == 1756
+
+    def test_max_costs_more_than_high(self, provider):
+        high, xhigh, top = (
+            provider.estimate_cost(
+                "gpt-image-2.5-sunburst", "x", quality=q, size="1024x1024"
+            )["estimated_cost_usd"]
+            for q in ("high", "xhigh", "max")
+        )
+        assert high < xhigh < top
+
+    def test_gpt_image_2_estimate_unchanged(self, provider):
+        """Regression: adding 2.5 must not change gpt-image-2's estimator."""
+        result = provider.estimate_cost(
+            "gpt-image-2", "x", quality="high", size="1024x1024"
+        )
+        assert result["breakdown"]["tokens_per_image"] == 5500

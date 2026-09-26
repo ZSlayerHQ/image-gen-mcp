@@ -113,6 +113,18 @@ class TestSpecificValidators:
         assert validate_image_quality(None) == ImageQuality.AUTO
         assert validate_image_quality(ImageQuality.HIGH) == ImageQuality.HIGH
 
+    def test_validate_image_quality_gpt_image_2_5_tiers(self):
+        """xhigh and max (GPT Image 2.5) are real values, not aliases."""
+        assert validate_image_quality("xhigh") == ImageQuality.XHIGH
+        assert validate_image_quality("MAX") == ImageQuality.MAX
+        assert validate_image_quality("extra-high") == ImageQuality.XHIGH
+        assert validate_image_quality("extra high") == ImageQuality.XHIGH
+        assert validate_image_quality("4") == ImageQuality.XHIGH
+        assert validate_image_quality("5") == ImageQuality.MAX
+        # Existing aliases keep their meaning
+        assert validate_image_quality("maximum") == ImageQuality.HIGH
+        assert validate_image_quality("3") == ImageQuality.HIGH
+
     def test_validate_image_size(self):
         """Test image size validation."""
         assert validate_image_size("1024x1024") == ImageSize.SQUARE
@@ -753,6 +765,107 @@ class TestOpenAIClientManager:
         assert sent_bg == "auto", (
             f"gpt-image-2 edit should receive background='auto', got {sent_bg!r}"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model", ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]
+    )
+    @patch("image_gen_mcp.utils.openai_client.AsyncOpenAI")
+    async def test_generate_image_keeps_transparent_and_max_for_v2_5(
+        self, mock_openai_class, mock_openai_settings, model
+    ):
+        """The 2.5 models support transparency natively and the max tier, so
+        neither may be rewritten on the way out."""
+        from unittest.mock import AsyncMock
+
+        mock_response = MagicMock()
+        mock_response.data = [MagicMock(b64_json="Zg==")]
+
+        mock_client = MagicMock()
+        mock_client.images.generate = AsyncMock(return_value=mock_response)
+        mock_openai_class.return_value = mock_client
+
+        manager = OpenAIClientManager(mock_openai_settings)
+
+        await manager.generate_image(
+            prompt="a shop sign",
+            model=model,
+            quality="max",
+            background="transparent",
+        )
+
+        sent = mock_client.images.generate.call_args.kwargs
+        assert sent["model"] == model
+        assert sent["background"] == "transparent"
+        assert sent["quality"] == "max"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model,quality,expected",
+        [
+            ("gpt-image-2", "max", "high"),
+            ("gpt-image-1.5", "xhigh", "high"),
+            ("gpt-image-2.5-flare", "xhigh", "xhigh"),
+            ("gpt-image-2.5-sunburst", "max", "max"),
+        ],
+    )
+    @patch("image_gen_mcp.utils.openai_client.AsyncOpenAI")
+    async def test_edit_image_resolves_quality_per_model(
+        self, mock_openai_class, mock_openai_settings, model, quality, expected
+    ):
+        """This is the path ImageEditingTool.edit() uses: xhigh/max must never
+        reach a model that lacks them."""
+        from unittest.mock import AsyncMock
+
+        mock_response = MagicMock()
+        mock_response.data = [MagicMock(b64_json="Zg==")]
+
+        mock_client = MagicMock()
+        mock_client.images.edit = AsyncMock(return_value=mock_response)
+        mock_openai_class.return_value = mock_client
+
+        manager = OpenAIClientManager(mock_openai_settings)
+
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\rIDATx\x9cc\xfc\xcf\xc0\x00\x00\x00\x03\x00\x01"
+            b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        import base64 as _b64
+        image_b64 = _b64.b64encode(png_bytes).decode()
+
+        await manager.edit_image(
+            image_data=image_b64,
+            prompt="make the sign say CLOSED",
+            model=model,
+            quality=quality,
+            background="transparent",
+        )
+
+        sent = mock_client.images.edit.call_args.kwargs
+        assert sent["quality"] == expected
+        if model.startswith("gpt-image-2.5"):
+            assert sent["background"] == "transparent"
+
+    def test_estimate_cost_v2_5_uses_calculator_tokens(self, mock_openai_settings):
+        manager = OpenAIClientManager(mock_openai_settings)
+        result = manager.estimate_cost(
+            "a sign", 1, model="gpt-image-2.5-flare", quality="low",
+            size="1024x1024",
+        )
+        assert result["image_output_tokens"] == 196
+
+    def test_default_model_is_sunburst(self):
+        import inspect
+
+        for method in ("generate_image", "edit_image", "estimate_cost"):
+            default = inspect.signature(
+                getattr(OpenAIClientManager, method)
+            ).parameters["model"].default
+            assert default == "gpt-image-2.5-sunburst", method
 
     @patch("image_gen_mcp.utils.openai_client.AsyncOpenAI")
     def test_openai_client_custom_settings(

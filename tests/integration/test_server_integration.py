@@ -139,6 +139,8 @@ class TestModelRegistry:
         assert "gpt-image-1" in models
         assert "gpt-image-1.5" in models
         assert "gpt-image-2" in models
+        assert "gpt-image-2.5-flare" in models
+        assert "gpt-image-2.5-sunburst" in models
 
     @pytest.mark.asyncio
     async def test_get_model_info(self):
@@ -159,6 +161,20 @@ class TestModelRegistry:
 
         assert model_info is not None
         assert model_info.model_id == "gpt-image-2"
+        assert any("3840x2160" in size for size in model_info.size_options)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model_id", ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]
+    )
+    async def test_get_model_info_gpt_image_2_5(self, model_id):
+        """The 2.5 model docs load and list the new quality tiers."""
+        model_info = await model_registry.get_model_info(model_id)
+
+        assert model_info is not None
+        assert model_info.model_id == model_id
+        assert "xhigh" in model_info.quality_levels
+        assert "max" in model_info.quality_levels
         assert any("3840x2160" in size for size in model_info.size_options)
 
     @pytest.mark.asyncio

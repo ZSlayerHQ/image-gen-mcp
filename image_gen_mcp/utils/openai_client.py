@@ -11,7 +11,7 @@ from ..config.settings import OpenAISettings
 from ..providers.openai import (
     GPT_IMAGE_TOKEN_PRICING,
     OpenAIProvider,
-    _gpt_image_2_tokens_per_image,
+    gpt_image_tokens_per_image,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class OpenAIClientManager:
     async def generate_image(
         self,
         prompt: str,
-        model: str = "gpt-image-2",
+        model: str = "gpt-image-2.5-sunburst",
         quality: str = "auto",
         size: str = "1536x1024",
         style: str = "vivid",
@@ -54,6 +54,12 @@ class OpenAIClientManager:
         n: int = 1,
     ) -> ImagesResponse:
         """Generate an image using OpenAI's Images API."""
+
+        # xhigh/max exist only on the gpt-image-2.5 models; step them down
+        # for older models the same way OpenAIProvider does.
+        capabilities = OpenAIProvider.SUPPORTED_MODELS.get(model)
+        if capabilities is not None:
+            quality = OpenAIProvider._resolve_quality(quality, capabilities, model)
 
         request_params = {
             "model": model,
@@ -100,7 +106,7 @@ class OpenAIClientManager:
         image_data: str | bytes,
         prompt: str,
         mask_data: str | bytes | None = None,
-        model: str = "gpt-image-2",
+        model: str = "gpt-image-2.5-sunburst",
         quality: str = "auto",
         size: str = "1536x1024",
         output_format: str = "png",
@@ -125,6 +131,7 @@ class OpenAIClientManager:
         capabilities = OpenAIProvider.SUPPORTED_MODELS.get(model)
         if capabilities is not None:
             size = OpenAIProvider._resolve_size(size, capabilities, model)
+            quality = OpenAIProvider._resolve_quality(quality, capabilities, model)
 
         request_params = {
             "model": model,
@@ -168,15 +175,15 @@ class OpenAIClientManager:
         self,
         prompt: str,
         image_count: int = 1,
-        model: str = "gpt-image-2",
+        model: str = "gpt-image-2.5-sunburst",
         quality: str = "auto",
         size: str = "1024x1024",
     ) -> dict[str, Any]:
         """Estimate the cost of image generation.
 
-        For gpt-image-2 the per-image token count is approximated by
-        quality tier scaled to pixel count (see OpenAIProvider). Results
-        are rough — use OpenAIProvider.estimate_cost on the active
+        For gpt-image-2 and the gpt-image-2.5 models the per-image token
+        count depends on quality and size (see gpt_image_tokens_per_image).
+        Results are rough — use OpenAIProvider.estimate_cost on the active
         provider instance for the authoritative per-model breakdown.
         """
 
@@ -202,10 +209,9 @@ class OpenAIClientManager:
                     "image_output_cost": 0.0,
                 },
             }
-        if model == "gpt-image-2":
-            tokens_per_image = _gpt_image_2_tokens_per_image(quality, size)
-        else:
-            tokens_per_image = pricing["tokens_per_image"]
+        quality = getattr(quality, "value", quality)
+        size = getattr(size, "value", size)
+        tokens_per_image = gpt_image_tokens_per_image(model, quality, size)
 
         # Rough token estimation (actual tokenization may vary)
         text_tokens = len(prompt.split()) * 1.3

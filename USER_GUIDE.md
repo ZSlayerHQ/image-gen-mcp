@@ -126,7 +126,7 @@ PROVIDERS__GEMINI__API_KEY=your-gemini-key
 PROVIDERS__GEMINI__ENABLED=true
 
 # Image Settings
-IMAGES__DEFAULT_MODEL=gpt-image-1
+IMAGES__DEFAULT_MODEL=gpt-image-2.5-sunburst
 IMAGES__DEFAULT_QUALITY=high
 IMAGES__DEFAULT_SIZE=1536x1024
 ```
@@ -134,13 +134,18 @@ IMAGES__DEFAULT_SIZE=1536x1024
 ### Supported Models
 
 **OpenAI Models:**
-- `gpt-image-1`: Latest and most powerful image generation model
-- `dall-e-3`: High-quality creative image generation
-- `dall-e-2`: Classic image generation model
+- `gpt-image-2.5-sunburst` (default): OpenAI's highest-quality image model (September 2026); best for precise edits and exact lettering on signs and posters
+- `gpt-image-2.5-flare`: The fast GPT Image 2.5 model for everyday, high-volume work
+- `gpt-image-2`: Previous flagship with flexible sizes up to 4K
+- `gpt-image-1.5`, `gpt-image-1`: Earlier GPT Image models with preset sizes
+- `dall-e-3`, `dall-e-2`: Still listed, but OpenAI removed them from its API on 12 May 2026
+
+The two GPT Image 2.5 models add the `xhigh` and `max` quality settings. For exact text in an image, quote the text exactly, and say which font, where it goes and what language it is in (see [Getting Exact Text in Images](docs/openai_images_api_guide.md#getting-exact-text-in-images)).
 
 **Google Gemini Models:**
 - `imagen-4`: Google's latest image generation model
 - `imagen-4-ultra`: Enhanced high-quality version
+- `imagen-4-fast`: Faster, lower-cost Imagen 4
 - `imagen-3`: Previous generation stable model
 
 ## 💡 Tips for Better Results
@@ -224,11 +229,16 @@ If you encounter technical issues:
 
 | Model | Provider | Generation | Editing | Best For |
 |-------|----------|------------|---------|----------|
-| gpt-image-1 | OpenAI | ✅ | ✅ | Latest features, highest quality |
-| dall-e-3 | OpenAI | ✅ | ❌ | Creative, artistic images |
-| dall-e-2 | OpenAI | ✅ | ✅ | Simple images, editing tasks |
+| gpt-image-2.5-sunburst | OpenAI | ✅ | ✅ | Highest quality, precise edits, exact lettering (default) |
+| gpt-image-2.5-flare | OpenAI | ✅ | ✅ | Fast drafts and high-volume work |
+| gpt-image-2 | OpenAI | ✅ | ✅ | Flexible sizes up to 4K |
+| gpt-image-1.5 | OpenAI | ✅ | ✅ | Earlier model, preset sizes |
+| gpt-image-1 | OpenAI | ✅ | ✅ | Earlier model, preset sizes |
+| dall-e-3 | OpenAI | ⚠️ | ❌ | Removed from OpenAI's API on 12 May 2026 |
+| dall-e-2 | OpenAI | ⚠️ | ❌ | Removed from OpenAI's API on 12 May 2026 |
 | imagen-4 | Google | ✅ | ❌ | Alternative style, high quality |
 | imagen-4-ultra | Google | ✅ | ❌ | Premium quality Imagen |
+| imagen-4-fast | Google | ✅ | ❌ | Faster, lower-cost Imagen |
 | imagen-3 | Google | ✅ | ❌ | Stable, reliable generation |
 
 ## 🎉 Start Creating

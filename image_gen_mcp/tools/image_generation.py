@@ -275,7 +275,7 @@ class ImageGenerationTool:
                 n=1,
             )
 
-            # Estimate cost (quality/size-aware for gpt-image-2)
+            # Estimate cost (quality/size-aware for gpt-image-2 and 2.5)
             cost_info = provider.estimate_cost(
                 target_model,
                 prompt,

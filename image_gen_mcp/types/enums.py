@@ -10,7 +10,9 @@ from enum import Enum
 # Description mappings for enums
 IMAGE_QUALITY_DESCRIPTIONS = {
     "auto": "Automatic quality selection based on prompt",
-    "high": "Maximum quality with higher token usage",
+    "max": "Highest detail and cost (gpt-image-2.5 models only)",
+    "xhigh": "Extra-high detail (gpt-image-2.5 models only)",
+    "high": "High quality with higher token usage",
     "medium": "Balanced quality and cost",
     "low": "Lower quality with reduced cost",
 }
@@ -19,7 +21,7 @@ IMAGE_SIZE_DESCRIPTIONS = {
     "1024x1024": "Square format (1:1 ratio)",
     "1536x1024": "Landscape format (3:2 ratio)",
     "1024x1536": "Portrait format (2:3 ratio)",
-    "3840x2160": "4K landscape (16:9 ratio, gpt-image-2 only)",
+    "3840x2160": "4K landscape (16:9 ratio, gpt-image-2 and gpt-image-2.5 models)",
 }
 
 IMAGE_STYLE_DESCRIPTIONS = {
@@ -51,12 +53,18 @@ class ImageQuality(str, Enum):
 
     The quality parameter affects both the visual quality and generation cost:
     - AUTO: Let the model decide based on the prompt
-    - HIGH: Maximum quality, higher cost
+    - MAX: Highest detail and cost (gpt-image-2.5-flare / -sunburst only)
+    - XHIGH: Extra-high detail (gpt-image-2.5-flare / -sunburst only)
+    - HIGH: High quality, higher cost
     - MEDIUM: Balanced quality and cost
     - LOW: Lower quality, reduced cost
+
+    Models without XHIGH/MAX step down to HIGH at the provider boundary.
     """
 
     AUTO = "auto"
+    MAX = "max"
+    XHIGH = "xhigh"
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"

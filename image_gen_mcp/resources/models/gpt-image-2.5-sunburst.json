@@ -1,0 +1,72 @@
+{
+  "model_id": "gpt-image-2.5-sunburst",
+  "name": "GPT-Image-2.5 Sunburst",
+  "version": "2.5 (snapshot gpt-image-2.5-sunburst-2026-09-08)",
+  "capabilities": [
+    "Text-to-Image Generation: GPT Image 2.5 base model (released 2026-09-08), optimised for quality, with higher image quality than gpt-image-2",
+    "Image Editing: OpenAI's pick where editing precision matters most; mask-based inpainting and up to 16 reference images per edit",
+    "Text Rendering: Best choice here for exact lettering on signs, posters, labels and decals",
+    "Quality Tiers: low, medium, high, xhigh, max, auto (xhigh and max are new in GPT Image 2.5)",
+    "Flexible Sizes: Any WxH where both edges are multiples of 16 (max edge 3840px, aspect <=3:1, 655,360 <= total pixels <= 8,294,400); outputs above 3,686,400 pixels (2560x1440) are experimental",
+    "Multiple Formats: PNG, JPEG, WebP output formats",
+    "Background Control: auto, opaque, transparent (native; use PNG or WebP output with transparent)",
+    "Compression: 0-100% for JPEG/WebP formats"
+  ],
+  "pricing": {
+    "text_input": "$5 per 1M tokens",
+    "cached_text_input": "$1.25 per 1M tokens (Responses API image tool only)",
+    "image_input": "$8 per 1M tokens",
+    "cached_image_input": "$2 per 1M tokens (Responses API image tool only)",
+    "image_output": "$30 per 1M tokens (same rates as gpt-image-2)",
+    "per_image_1024x1024": "low ~$0.006, medium ~$0.013, high ~$0.053, xhigh ~$0.094, max ~$0.211 (OpenAI calculator estimate; actual usage can differ by model)",
+    "per_image_3840x2160": "low ~$0.011, high ~$0.100, max ~$0.400 (OpenAI calculator estimate)"
+  },
+  "rate_limits": {
+    "default": "Tier-dependent: 5 IPM (tier 1) to 250 IPM (tier 5)",
+    "configurable": "Per organization settings",
+    "automatic_retry": "Built-in backoff logic"
+  },
+  "size_options": [
+    "1024x1024",
+    "1536x1024 (landscape)",
+    "1024x1536 (portrait)",
+    "2048x2048 (2K square, experimental)",
+    "2048x1152 (2K landscape)",
+    "3840x2160 (4K landscape, experimental)",
+    "2160x3840 (4K portrait, experimental)",
+    "Custom: any WxH where both are multiples of 16, max edge 3840, aspect <= 3:1, 655,360 <= pixels <= 8,294,400; above 3,686,400 pixels is experimental"
+  ],
+  "quality_levels": [
+    "auto",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "formats": [
+    "PNG",
+    "JPEG",
+    "WebP"
+  ],
+  "features": {
+    "background_control": "auto, opaque, transparent (native support; transparent needs PNG or WebP output)",
+    "compression": "0-100% for JPEG/WebP",
+    "moderation": "auto, low content filtering",
+    "flexible_sizing": "Any dimensions within the model's size constraints",
+    "endpoints": "Image API generations and edits; also the Responses API image generation tool. No Batch API support."
+  },
+  "best_practices": [
+    "Default model for this server: pick it when exact lettering or edit precision matters more than speed",
+    "Exact text: quote the exact string, say how many times it appears, and state the font or lettering style, placement and language",
+    "Spell unusual words or invented names letter by letter when needed, ask for no extra text, then check the spelling in the output",
+    "Draft at low; compare medium and high for small or dense lettering; use xhigh or max only when a lower setting still falls short",
+    "A larger non-square size can use fewer output tokens than a square one at the same quality",
+    "Save image IDs from tool responses to access images later via resources"
+  ],
+  "examples": [
+    "generate_image(prompt='Painted wooden shop sign above a seaside chip shop. The sign reads exactly \"HARROWFIELD FISH BAR\", once, in cream serif capitals on dark green, centred. British English. No other text.', model='gpt-image-2.5-sunburst', size='1536x1024', quality='high')",
+    "generate_image(prompt='Red neon sign reading exactly \"OPEN\", once, in a rain-streaked shop window at night. No other text.', model='gpt-image-2.5-sunburst', quality='medium', background='opaque')",
+    "edit_image(image_data='data:image/png;base64,...', prompt='Change the sign text to exactly \"CLOSED\", keep the font and colours', model='gpt-image-2.5-sunburst')"
+  ]
+}

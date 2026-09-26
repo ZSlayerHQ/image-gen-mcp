@@ -766,3 +766,99 @@ class TestImageEditingTool:
         settings_no_openai.providers = ProvidersSettings()
         with pytest.raises(ValueError, match="OpenAI provider settings are required"):
             ImageEditingTool.validate_openai_provider_settings(settings_no_openai)
+
+
+# 1x1 transparent PNG, so the storage manager has a real image to save.
+_TINY_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8z8BQDwAEhQGA"
+    "hKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+@pytest.fixture
+def v25_editing_tool(storage_manager, cache_manager, mock_openai_settings):
+    """ImageEditingTool configured the way the tool requires (providers.openai
+    set), with gpt-image-2.5-sunburst as the default model and the OpenAI
+    client mocked."""
+    from image_gen_mcp.config.settings import ImageSettings
+
+    settings = Settings()
+    settings.providers = ProvidersSettings()
+    settings.providers.openai = mock_openai_settings
+    settings.images = ImageSettings(
+        default_model="gpt-image-2.5-sunburst", default_size="1024x1024"
+    )
+    tool = ImageEditingTool(
+        storage_manager=storage_manager,
+        cache_manager=cache_manager,
+        settings=settings,
+    )
+    # A plain namespace, not a MagicMock: the tool copies optional response
+    # attributes into JSON metadata, and mock attributes don't serialise.
+    from types import SimpleNamespace
+
+    response = SimpleNamespace(
+        data=[SimpleNamespace(b64_json=_TINY_PNG_B64)], usage=None, created=0
+    )
+    tool.openai_client = MagicMock()
+    tool.openai_client.edit_image = AsyncMock(return_value=response)
+    tool.openai_client.estimate_cost = MagicMock(
+        return_value={"estimated_cost_usd": 0.01}
+    )
+    return tool
+
+
+class TestImageEditingToolModelSelection:
+    """edit_image takes an optional model; without one it uses the
+    configured default (gpt-image-2.5-sunburst)."""
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_configured_model(self, v25_editing_tool):
+        result = await v25_editing_tool.edit(
+            image_data=_TINY_PNG_B64, prompt="default model edit"
+        )
+        sent = v25_editing_tool.openai_client.edit_image.call_args.kwargs
+        assert sent["model"] == "gpt-image-2.5-sunburst"
+        assert result["metadata"]["model"] == "gpt-image-2.5-sunburst"
+
+    @pytest.mark.asyncio
+    async def test_uses_requested_model(self, v25_editing_tool):
+        result = await v25_editing_tool.edit(
+            image_data=_TINY_PNG_B64,
+            prompt="flare edit",
+            quality="xhigh",
+            model="gpt-image-2.5-flare",
+        )
+        sent = v25_editing_tool.openai_client.edit_image.call_args.kwargs
+        assert sent["model"] == "gpt-image-2.5-flare"
+        assert sent["quality"] == "xhigh"
+        cost_kwargs = v25_editing_tool.openai_client.estimate_cost.call_args.kwargs
+        assert cost_kwargs["model"] == "gpt-image-2.5-flare"
+        assert result["metadata"]["model"] == "gpt-image-2.5-flare"
+
+    @pytest.mark.asyncio
+    async def test_max_steps_down_for_older_model(self, v25_editing_tool):
+        result = await v25_editing_tool.edit(
+            image_data=_TINY_PNG_B64,
+            prompt="older model edit",
+            quality="max",
+            model="gpt-image-2",
+        )
+        sent = v25_editing_tool.openai_client.edit_image.call_args.kwargs
+        assert sent["quality"] == "high"
+        assert result["metadata"]["quality"] == "high"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model", ["dall-e-3", "imagen-4", "not-a-model"])
+    async def test_rejects_models_that_cannot_edit(self, v25_editing_tool, model):
+        with pytest.raises(ValueError, match="cannot edit images"):
+            await v25_editing_tool.edit(
+                image_data=_TINY_PNG_B64, prompt="bad model", model=model
+            )
+        v25_editing_tool.openai_client.edit_image.assert_not_called()
+
+    def test_edit_capable_models_include_2_5(self):
+        models = ImageEditingTool.edit_capable_models()
+        assert "gpt-image-2.5-sunburst" in models
+        assert "gpt-image-2.5-flare" in models
+        assert all(m.startswith("gpt-image-") for m in models)

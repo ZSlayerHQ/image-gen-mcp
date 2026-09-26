@@ -239,7 +239,7 @@ class TestImageSettings:
         """Test image settings with default values."""
         settings = ImageSettings()
 
-        assert settings.default_model == "gpt-image-2"
+        assert settings.default_model == "gpt-image-2.5-sunburst"
         assert settings.default_quality == "auto"
         assert settings.default_size == "1536x1024"
         assert settings.default_style == "vivid"
@@ -266,6 +266,14 @@ class TestImageSettings:
         assert settings.default_moderation == "low"
         assert settings.default_output_format == "jpeg"
         assert settings.default_compression == 85
+
+    def test_image_settings_accepts_gpt_image_2_5_quality_tiers(self):
+        """xhigh and max are valid defaults (GPT Image 2.5 tiers)."""
+        for quality in ["xhigh", "max"]:
+            settings = ImageSettings(default_quality=quality)
+            assert settings.default_quality == quality
+        with pytest.raises(ValidationError):
+            ImageSettings(default_quality="ultra")
 
     def test_image_settings_validation(self):
         """Test image settings validation."""

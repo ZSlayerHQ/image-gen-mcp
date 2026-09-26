@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import math
 from typing import Any
 
 import httpx
@@ -48,11 +49,38 @@ GPT_IMAGE_TOKEN_PRICING: dict[str, dict[str, Any]] = {
         "image_output_per_1m_tokens": 30.0,
         "tokens_per_image_by_quality": _GPT_IMAGE_2_TOKENS_BASE_1024,
     },
+    # Both GPT Image 2.5 models bill at GPT Image 2's token rates (OpenAI model
+    # pages, 2026-09-08). Output tokens come from _gpt_image_2_5_tokens_per_image.
+    "gpt-image-2.5-flare": {
+        "text_input_per_1m_tokens": 5.0,
+        "image_output_per_1m_tokens": 30.0,
+    },
+    "gpt-image-2.5-sunburst": {
+        "text_input_per_1m_tokens": 5.0,
+        "image_output_per_1m_tokens": 30.0,
+    },
+}
+
+GPT_IMAGE_2_5_MODELS: frozenset[str] = frozenset(
+    {"gpt-image-2.5-flare", "gpt-image-2.5-sunburst"}
+)
+
+# Output-token grid for the GPT Image 2.5 models: patches along the image's
+# long edge per quality tier. Copied from the GptImageTokenCalculator on
+# OpenAI's image-generation guide (read 2026-09-27), which uses one table for
+# both Flare and Sunburst. OpenAI notes the two models can consume different
+# token counts at the same setting, so treat results as estimates.
+_GPT_IMAGE_2_5_GRID_LONG_EDGE: dict[str, int] = {
+    "low": 16,
+    "medium": 24,
+    "high": 48,
+    "xhigh": 64,
+    "max": 96,
 }
 
 
-def _parse_pixels(size: str) -> int | None:
-    """Parse a 'WxH' size string and return W*H. None on failure or 'auto'."""
+def _parse_dimensions(size: str) -> tuple[int, int] | None:
+    """Parse a 'WxH' size string into (W, H). None on failure or 'auto'."""
     if not isinstance(size, str):
         return None
     normalized = size.strip().lower()
@@ -65,7 +93,15 @@ def _parse_pixels(size: str) -> int | None:
         return None
     if w <= 0 or h <= 0:
         return None
-    return w * h
+    return w, h
+
+
+def _parse_pixels(size: str) -> int | None:
+    """Parse a 'WxH' size string and return W*H. None on failure or 'auto'."""
+    dimensions = _parse_dimensions(size)
+    if dimensions is None:
+        return None
+    return dimensions[0] * dimensions[1]
 
 
 def _gpt_image_2_tokens_per_image(quality: str, size: str) -> int:
@@ -94,6 +130,39 @@ def _gpt_image_2_tokens_per_image(quality: str, size: str) -> int:
     return max(1, int(base * multiplier))
 
 
+def _gpt_image_2_5_tokens_per_image(quality: str, size: str) -> int:
+    """Output tokens for one gpt-image-2.5-flare / -sunburst image.
+
+    Mirrors OpenAI's GptImageTokenCalculator: the long edge gets the quality
+    tier's patch count, the short edge that count divided by the aspect
+    ratio (rounded half-to-even), and tokens are
+    ``ceil(patches * (2_000_000 + W*H) / 4_000_000)``.
+
+    'auto' (or an unknown tier) is estimated as medium, and 'auto' or an
+    unparseable size as 1024x1024, because the real figure depends on what
+    the model picks.
+    """
+    grid = _GPT_IMAGE_2_5_GRID_LONG_EDGE.get(
+        (quality or "auto").lower(), _GPT_IMAGE_2_5_GRID_LONG_EDGE["medium"]
+    )
+    width, height = _parse_dimensions(size) or (1024, 1024)
+    long_edge, short_edge = max(width, height), min(width, height)
+    scaled = grid / (long_edge / short_edge)
+    floor = math.floor(scaled)
+    short_grid = floor + floor % 2 if scaled - floor == 0.5 else round(scaled)
+    patches = grid * short_grid
+    return math.ceil(patches * (2_000_000 + width * height) / 4_000_000)
+
+
+def gpt_image_tokens_per_image(model: str, quality: str, size: str) -> int:
+    """Approximate output tokens per image for any gpt-image-* model."""
+    if model in GPT_IMAGE_2_5_MODELS:
+        return _gpt_image_2_5_tokens_per_image(quality, size)
+    if model == "gpt-image-2":
+        return _gpt_image_2_tokens_per_image(quality, size)
+    return GPT_IMAGE_TOKEN_PRICING[model]["tokens_per_image"]
+
+
 class OpenAIProvider(LLMProvider):
     """OpenAI provider for image generation using gpt-image and DALL-E models."""
 
@@ -112,6 +181,16 @@ class OpenAIProvider(LLMProvider):
         },
     )
 
+    # Flexible WxH rules shared by gpt-image-2 and the gpt-image-2.5 models
+    # (OpenAI Image API reference, size parameter).
+    _FLEXIBLE_SIZE_CONSTRAINTS = {
+        "multiple_of": 16,
+        "max_edge": 3840,
+        "max_aspect_ratio": 3.0,
+        "min_pixels": 655_360,
+        "max_pixels": 8_294_400,
+    }
+
     # gpt-image-2 adds flexible sizing up to 4K
     _GPT_IMAGE_2_CAPABILITY = dict(
         supported_sizes=[
@@ -128,13 +207,7 @@ class OpenAIProvider(LLMProvider):
         supports_background=True,
         supports_compression=True,
         supports_custom_sizes=True,
-        size_constraints={
-            "multiple_of": 16,
-            "max_edge": 3840,
-            "max_aspect_ratio": 3.0,
-            "min_pixels": 655_360,
-            "max_pixels": 8_294_400,
-        },
+        size_constraints=dict(_FLEXIBLE_SIZE_CONSTRAINTS),
         custom_parameters={
             "moderation": ["auto", "low"],
             # gpt-image-2 does not natively support transparent backgrounds
@@ -146,8 +219,42 @@ class OpenAIProvider(LLMProvider):
         },
     )
 
+    # gpt-image-2.5-flare / -sunburst (released 2026-09-08): gpt-image-2's
+    # flexible sizing, native transparent backgrounds, and two extra quality
+    # tiers above 'high'. Outputs above 3,686,400 pixels (2560x1440) are
+    # experimental per OpenAI.
+    _GPT_IMAGE_2_5_CAPABILITY = dict(
+        supported_sizes=[
+            "auto",
+            "1024x1024",
+            "1536x1024",
+            "1024x1536",
+            "3840x2160",
+        ],
+        supported_qualities=["auto", "max", "xhigh", "high", "medium", "low"],
+        supported_formats=["png", "jpeg", "webp"],
+        max_images_per_request=1,
+        supports_style=False,
+        supports_background=True,
+        supports_compression=True,
+        supports_custom_sizes=True,
+        size_constraints=dict(_FLEXIBLE_SIZE_CONSTRAINTS),
+        custom_parameters={
+            "moderation": ["auto", "low"],
+            "background": ["auto", "transparent", "opaque"],
+        },
+    )
+
     # Supported models and their capabilities
     SUPPORTED_MODELS = {
+        "gpt-image-2.5-sunburst": ModelCapability(
+            model_id="gpt-image-2.5-sunburst",
+            **_GPT_IMAGE_2_5_CAPABILITY,
+        ),
+        "gpt-image-2.5-flare": ModelCapability(
+            model_id="gpt-image-2.5-flare",
+            **_GPT_IMAGE_2_5_CAPABILITY,
+        ),
         "gpt-image-1": ModelCapability(
             model_id="gpt-image-1",
             **_GPT_IMAGE_CAPABILITY,
@@ -256,8 +363,10 @@ class OpenAIProvider(LLMProvider):
     def _resolve_background(cls, background: str, model: str) -> str:
         """Downgrade unsupported background values per model.
 
-        gpt-image-2 does not support transparent backgrounds per OpenAI
-        docs; callers that request it get 'auto' instead with a warning.
+        gpt-image-2 transparency is only a preview per OpenAI docs, so
+        callers that request it get 'auto' instead with a warning. The
+        gpt-image-2.5 models and gpt-image-1 / 1.5 support transparent
+        natively and pass it through.
         """
         if (
             model == "gpt-image-2"
@@ -271,13 +380,43 @@ class OpenAIProvider(LLMProvider):
             return "auto"
         return background
 
+    # Quality tiers that only the gpt-image-2.5 models offer, and the
+    # nearest tier to use on models that lack them.
+    _QUALITY_STEP_DOWN: dict[str, str] = {"max": "high", "xhigh": "high"}
+
+    @classmethod
+    def _resolve_quality(
+        cls, quality: Any, capabilities: ModelCapability, model: str
+    ) -> Any:
+        """Return a quality value the model accepts.
+
+        'xhigh' / 'max' on a model without them step down to 'high' where
+        the model has it; any other unsupported value falls back to 'auto'
+        (or the model's first quality). Enum inputs are unwrapped.
+        """
+        value = quality.value if hasattr(quality, "value") else quality
+        normalized = value.strip().lower() if isinstance(value, str) else value
+        if normalized in capabilities.supported_qualities:
+            return normalized
+        step_down = cls._QUALITY_STEP_DOWN.get(normalized)
+        if step_down in capabilities.supported_qualities:
+            fallback = step_down
+        elif "auto" in capabilities.supported_qualities:
+            fallback = "auto"
+        else:
+            fallback = capabilities.supported_qualities[0]
+        logger.warning(
+            "Quality %r not supported by %s, using %s", quality, model, fallback
+        )
+        return fallback
+
     def validate_model_params(
         self, model: str, params: dict[str, Any]
     ) -> dict[str, Any]:
-        """Normalize params, resolving size so metadata and cache reflect
-        what will actually be sent to the API (custom sizes that fail the
-        model's constraints are downgraded to a supported fallback here,
-        not silently rewritten later)."""
+        """Normalize params, resolving size and quality so metadata and
+        cache reflect what will actually be sent to the API (values the
+        model can't take are downgraded to a supported fallback here, not
+        silently rewritten later)."""
         # Normalize size BEFORE delegating to super() — for models without
         # supports_custom_sizes, the base validator does an exact-match check
         # against supported_sizes and would downgrade whitespace/case variants
@@ -285,6 +424,12 @@ class OpenAIProvider(LLMProvider):
         capabilities = self.get_model_capabilities(model)
         normalized_size: str | None = None
         params = dict(params)
+        if capabilities and "quality" in params:
+            # Resolve quality here too: the base validator would send an
+            # unsupported 'max' / 'xhigh' to 'auto' rather than to 'high'.
+            params["quality"] = self._resolve_quality(
+                params["quality"], capabilities, model
+            )
         if capabilities and "size" in params:
             raw = params["size"]
             # Unwrap enums (ImageSize etc.) — str(enum) gives "Class.MEMBER"
@@ -341,8 +486,11 @@ class OpenAIProvider(LLMProvider):
                 "hd" if quality == "high" else "standard"
             )
         elif not model.startswith("dall-e"):
-            # gpt-image models use the quality value directly
-            request_params["quality"] = quality
+            # gpt-image models take the quality value directly, once it is
+            # one the model supports (xhigh/max exist only on gpt-image-2.5)
+            request_params["quality"] = self._resolve_quality(
+                quality, capabilities, model
+            )
             request_params["moderation"] = moderation
 
         # Add size parameter
@@ -466,9 +614,11 @@ class OpenAIProvider(LLMProvider):
         # Add size parameter
         request_params["size"] = self._resolve_size(size, capabilities, model)
 
-        # Add gpt-image-1 family specific parameters
+        # Add gpt-image family specific parameters
         if model.startswith("gpt-image-"):
-            request_params["quality"] = quality
+            request_params["quality"] = self._resolve_quality(
+                quality, capabilities, model
+            )
             request_params["output_format"] = output_format
             request_params["background"] = self._resolve_background(
                 background, model
@@ -569,9 +719,9 @@ class OpenAIProvider(LLMProvider):
     ) -> dict[str, Any]:
         """Estimate cost for OpenAI image generation.
 
-        For gpt-image-2, output tokens vary substantially by quality and
-        size, so the estimate uses a quality-tiered baseline that scales
-        linearly with pixel count. Results are marked with
+        For gpt-image-2 and the gpt-image-2.5 models, output tokens vary
+        substantially by quality and size, so the estimate is quality- and
+        size-aware (see gpt_image_tokens_per_image). Results are marked with
         ``estimate_accuracy: "rough"`` — callers should not rely on these
         as authoritative billing figures.
         """
@@ -588,10 +738,7 @@ class OpenAIProvider(LLMProvider):
                 "text_input_per_1m_tokens"
             ]
 
-            if model == "gpt-image-2":
-                tokens_per_image = _gpt_image_2_tokens_per_image(quality, size)
-            else:
-                tokens_per_image = model_pricing["tokens_per_image"]
+            tokens_per_image = gpt_image_tokens_per_image(model, quality, size)
 
             image_tokens_total = tokens_per_image * image_count
             image_cost = (

@@ -512,7 +512,10 @@ async def generate_image(
             "The best practices for image generation prompt is to be highly specific "
             "and detailed about the subject, setting, style, mood, and visual elements "
             "you want, while using clear, unambiguous language to guide the AI's "
-            "creative interpretation."
+            "creative interpretation. For lettering, put the exact text in quotes, "
+            "say how many times it appears, state its font or style, placement "
+            "and language, spell unusual names letter by letter, and ask for no "
+            "other text."
         ),
         min_length=1,
         max_length=4000,
@@ -521,15 +524,27 @@ async def generate_image(
         default=None,
         description=(
             "AI model to use for image generation. Available models depend on "
-            "configured providers. If not specified, uses the configured default model."
+            "configured providers. If not specified, uses the configured default "
+            "model. gpt-image-2.5-sunburst gives the most precise results and "
+            "lettering; gpt-image-2.5-flare is faster for high volume."
         ),
     ),
     quality: Optional[str] = Field(
-        default="auto", description="Image quality: auto, high, medium, or low"
+        default="auto",
+        description=(
+            "Image quality: auto, low, medium, high, xhigh or max. xhigh and max "
+            "exist only on gpt-image-2.5 models; other models use high instead."
+        ),
     ),
     size: Optional[str] = Field(
         default="auto",
-        description="Image size: 1024x1024, 1536x1024, 1024x1536 or auto",
+        description=(
+            "Image size: auto, 1024x1024, 1536x1024, 1024x1536, or for gpt-image-2 "
+            "and gpt-image-2.5 models any WxH with both edges multiples of 16, "
+            "longest edge at most 3840, aspect ratio at most 3:1 and 655,360 to "
+            "8,294,400 pixels (e.g. 2048x1152, 3840x2160). Outputs above "
+            "3,686,400 pixels (2560x1440) are experimental."
+        ),
     ),
     style: Optional[str] = Field(
         default="vivid",
@@ -620,10 +635,18 @@ async def edit_image(
     ),
     size: Optional[str] = Field(
         default="auto",
-        description="Output image size: 1024x1024, 1536x1024, or 1024x1536",
+        description=(
+            "Output image size: auto, 1024x1024, 1536x1024, 1024x1536, or for "
+            "gpt-image-2 and gpt-image-2.5 models any WxH within their limits "
+            "(same rules as generate_image)"
+        ),
     ),
     quality: Optional[str] = Field(
-        default="auto", description="Image quality: auto, high, medium, or low"
+        default="auto",
+        description=(
+            "Image quality: auto, low, medium, high, xhigh or max. xhigh and max "
+            "exist only on gpt-image-2.5 models; other models use high instead."
+        ),
     ),
     output_format: Optional[str] = Field(
         default="png", description="Output format: png, jpeg, or webp"
@@ -633,6 +656,14 @@ async def edit_image(
     ),
     background: Optional[str] = Field(
         default="auto", description="Background type: auto, transparent, or opaque"
+    ),
+    model: Optional[str] = Field(
+        default=None,
+        description=(
+            "OpenAI GPT Image model for the edit (e.g. gpt-image-2.5-sunburst, "
+            "gpt-image-2.5-flare, gpt-image-2). If not specified, uses the "
+            "configured default model."
+        ),
     ),
 ) -> dict[str, Any]:
     """
@@ -672,6 +703,7 @@ async def edit_image(
             output_format=validated_output_format,
             compression=validated_compression,
             background=validated_background,
+            model=model,
         )
         return result
     except Exception as e:

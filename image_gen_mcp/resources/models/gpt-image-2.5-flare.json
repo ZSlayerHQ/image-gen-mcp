@@ -1,0 +1,71 @@
+{
+  "model_id": "gpt-image-2.5-flare",
+  "name": "GPT-Image-2.5 Flare",
+  "version": "2.5 (snapshot gpt-image-2.5-flare-2026-09-08)",
+  "capabilities": [
+    "Text-to-Image Generation: GPT Image 2.5 small model (released 2026-09-08), OpenAI's fastest for everyday, high-volume work, with image quality comparable to gpt-image-2",
+    "Image Editing: Mask-based inpainting and up to 16 reference images per edit",
+    "Text Rendering: Good lettering; use gpt-image-2.5-sunburst when exact lettering has to be right first time",
+    "Quality Tiers: low, medium, high, xhigh, max, auto (xhigh and max are new in GPT Image 2.5)",
+    "Flexible Sizes: Any WxH where both edges are multiples of 16 (max edge 3840px, aspect <=3:1, 655,360 <= total pixels <= 8,294,400); outputs above 3,686,400 pixels (2560x1440) are experimental",
+    "Multiple Formats: PNG, JPEG, WebP output formats",
+    "Background Control: auto, opaque, transparent (native; use PNG or WebP output with transparent)",
+    "Compression: 0-100% for JPEG/WebP formats"
+  ],
+  "pricing": {
+    "text_input": "$5 per 1M tokens",
+    "cached_text_input": "$1.25 per 1M tokens (Responses API image tool only)",
+    "image_input": "$8 per 1M tokens",
+    "cached_image_input": "$2 per 1M tokens (Responses API image tool only)",
+    "image_output": "$30 per 1M tokens (same rates as gpt-image-2 and gpt-image-2.5-sunburst)",
+    "per_image_1024x1024": "low ~$0.006, medium ~$0.013, high ~$0.053, xhigh ~$0.094, max ~$0.211 (OpenAI calculator estimate; actual usage can differ by model)",
+    "note": "Same token rates as Sunburst: the faster model is not automatically cheaper per image"
+  },
+  "rate_limits": {
+    "default": "Tier-dependent: 5 IPM (tier 1) to 250 IPM (tier 5)",
+    "configurable": "Per organization settings",
+    "automatic_retry": "Built-in backoff logic"
+  },
+  "size_options": [
+    "1024x1024",
+    "1536x1024 (landscape)",
+    "1024x1536 (portrait)",
+    "2048x2048 (2K square, experimental)",
+    "2048x1152 (2K landscape)",
+    "3840x2160 (4K landscape, experimental)",
+    "2160x3840 (4K portrait, experimental)",
+    "Custom: any WxH where both are multiples of 16, max edge 3840, aspect <= 3:1, 655,360 <= pixels <= 8,294,400; above 3,686,400 pixels is experimental"
+  ],
+  "quality_levels": [
+    "auto",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "formats": [
+    "PNG",
+    "JPEG",
+    "WebP"
+  ],
+  "features": {
+    "background_control": "auto, opaque, transparent (native support; transparent needs PNG or WebP output)",
+    "compression": "0-100% for JPEG/WebP",
+    "moderation": "auto, low content filtering",
+    "flexible_sizing": "Any dimensions within the model's size constraints",
+    "endpoints": "Image API generations and edits; also the Responses API image generation tool. No Batch API support."
+  },
+  "best_practices": [
+    "Use for drafts, variations and bulk texture or decal passes; move finals that need exact lettering to gpt-image-2.5-sunburst",
+    "Exact text: quote the exact string, say how many times it appears, and state the font or lettering style, placement and language",
+    "Spell unusual words or invented names letter by letter when needed, ask for no extra text, then check the spelling in the output",
+    "Draft at low; compare medium and high for small or dense lettering; use xhigh or max only when a lower setting still falls short",
+    "Save image IDs from tool responses to access images later via resources"
+  ],
+  "examples": [
+    "generate_image(prompt='Faded seaside arcade sign that reads exactly \"HARROWFIELD ARCADE\", once, in chunky red capitals on a white board. No other text.', model='gpt-image-2.5-flare', size='1536x1024', quality='low')",
+    "generate_image(prompt='Tileable weathered red-brick wall texture, flat front-on lighting', model='gpt-image-2.5-flare', size='1024x1024', quality='medium')",
+    "edit_image(image_data='data:image/png;base64,...', prompt='Add rust streaks under the sign bolts, change nothing else', model='gpt-image-2.5-flare')"
+  ]
+}

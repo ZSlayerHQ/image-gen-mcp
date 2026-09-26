@@ -57,6 +57,15 @@ class ImageEditingTool:
                 "parameters."
             )
 
+    @staticmethod
+    def edit_capable_models() -> list[str]:
+        """OpenAI models this tool can edit with (the gpt-image-* family)."""
+        return [
+            model_id
+            for model_id in OpenAIProvider.SUPPORTED_MODELS
+            if model_id.startswith("gpt-image-")
+        ]
+
     def _get_transport_type(self) -> str:
         """Detect the current transport type from environment or default to stdio."""
         import sys
@@ -104,8 +113,23 @@ class ImageEditingTool:
         output_format: str = "png",
         compression: int = 100,
         background: str = "auto",
+        model: str | None = None,
     ) -> dict[str, Any]:
-        """Edit an existing image with text instructions."""
+        """Edit an existing image with text instructions.
+
+        ``model`` picks the OpenAI GPT Image model for this edit; when it is
+        omitted the configured default model is used.
+        """
+
+        # Resolve and check the model before anything else: only the OpenAI
+        # gpt-image-* models can edit.
+        model = model or self.settings.images.default_model
+        edit_models = self.edit_capable_models()
+        if model not in edit_models:
+            raise ValueError(
+                f"Model {model!r} cannot edit images. "
+                f"Use one of: {', '.join(edit_models)}"
+            )
 
         # Apply defaults from settings
         quality = quality or self.settings.images.default_quality
@@ -120,13 +144,13 @@ class ImageEditingTool:
         # Generate task ID for tracking
         task_id = str(uuid.uuid4())
 
-        # Normalize size against the model's capabilities so the cache key and
-        # persisted metadata reflect what will actually be sent to the API
-        # (invalid custom sizes fall back to the supported default).
-        model = self.settings.images.default_model
-        capabilities = OpenAIProvider.SUPPORTED_MODELS.get(model)
-        if capabilities is not None:
-            size = OpenAIProvider._resolve_size(size, capabilities, model)
+        # Normalize size and quality against the model's capabilities so the
+        # cache key and persisted metadata reflect what will actually be sent
+        # to the API (invalid custom sizes fall back to the supported default;
+        # xhigh/max step down to high on models without them).
+        capabilities = OpenAIProvider.SUPPORTED_MODELS[model]
+        size = OpenAIProvider._resolve_size(size, capabilities, model)
+        quality = OpenAIProvider._resolve_quality(quality, capabilities, model)
 
         # Check cache first (using hash of image data)
         cache_params = {
@@ -158,7 +182,7 @@ class ImageEditingTool:
                 image_data=image_data,
                 prompt=prompt,
                 mask_data=mask_data,
-                model=self.settings.images.default_model,
+                model=model,
                 quality=quality,
                 size=size,
                 output_format=output_format,
@@ -173,11 +197,11 @@ class ImageEditingTool:
             # Decode base64 image data
             image_bytes = base64.b64decode(edited_image_data.b64_json)
 
-            # Estimate cost (quality/size-aware for gpt-image-2)
+            # Estimate cost (quality/size-aware for gpt-image-2 and 2.5)
             cost_info = self.openai_client.estimate_cost(
                 prompt,
                 1,
-                model=self.settings.images.default_model,
+                model=model,
                 quality=quality,
                 size=size,
             )
@@ -201,7 +225,7 @@ class ImageEditingTool:
                 "prompt": prompt,
                 "has_mask": mask_data is not None,
                 "parameters": {
-                    "model": self.settings.images.default_model,
+                    "model": model,
                     "quality": quality,
                     "size": size,
                     "output_format": output_format,
@@ -234,6 +258,7 @@ class ImageEditingTool:
                 "resource_uri": f"generated-images://{image_id}",
                 "operation": "edit",
                 "metadata": {
+                    "model": model,
                     "size": size,
                     "quality": quality,
                     "output_format": output_format,

@@ -4,7 +4,7 @@
 
 Traditional AI chatbot interfaces are limited to text-only interactions, regardless of how powerful their underlying language models are. Image Gen MCP Server bridges this gap by enabling **any LLM-powered chatbot client** to generate professional-quality images through the standardized Model Context Protocol (MCP).
 
-Whether you're using Claude Desktop, a custom ChatGPT interface, Llama-based applications, or any other LLM client that supports MCP, this server democratizes access to **multiple AI image generation models** including OpenAI's gpt-image-2, gpt-image-1.5, gpt-image-1, dall-e-3, dall-e-2, and Google's Imagen series (imagen-4, imagen-4-ultra, imagen-4-fast, imagen-3), transforming text-only conversations into rich, visual experiences.
+Whether you're using Claude Desktop, a custom ChatGPT interface, Llama-based applications, or any other LLM client that supports MCP, this server democratizes access to **multiple AI image generation models** including OpenAI's gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2, gpt-image-1.5, gpt-image-1, dall-e-3, dall-e-2, and Google's Imagen series (imagen-4, imagen-4-ultra, imagen-4-fast, imagen-3), transforming text-only conversations into rich, visual experiences.
 
 > **📦 Package Manager**: This project uses [UV](https://docs.astral.sh/uv/) for fast, reliable Python package management. UV provides better dependency resolution, faster installs, and proper environment isolation compared to traditional pip/venv workflows.
 
@@ -71,11 +71,11 @@ The AI ecosystem has evolved to include powerful language models from multiple p
 ## Features
 
 ### 🎨 Multi-Provider Image Generation
-- **Multiple AI Models**: Support for OpenAI (gpt-image-2, gpt-image-1.5, gpt-image-1, dall-e-3, dall-e-2) and Google Gemini (imagen-4, imagen-4-ultra, imagen-4-fast, imagen-3)
+- **Multiple AI Models**: Support for OpenAI (gpt-image-2.5-sunburst (default), gpt-image-2.5-flare, gpt-image-2, gpt-image-1.5, gpt-image-1, dall-e-3, dall-e-2) and Google Gemini (imagen-4, imagen-4-ultra, imagen-4-fast, imagen-3)
 - **Text-to-Image**: Generate high-quality images from text descriptions
 - **Image Editing**: Edit existing images with text instructions (OpenAI models)
 - **Multiple Formats**: Support for PNG, JPEG, and WebP output formats
-- **Quality Control**: Auto, high, medium, and low quality settings
+- **Quality Control**: Auto, low, medium and high quality settings, plus xhigh and max on the gpt-image-2.5 models
 - **Background Control**: Transparent, opaque, or auto background options
 - **Dynamic Model Discovery**: Query available models and capabilities at runtime
 
@@ -331,9 +331,9 @@ Generate images from text descriptions using any supported model.
 
 **Parameters**:
 - `prompt` (required): Text description of desired image
-- `model` (optional): Model to use (e.g., "gpt-image-2", "gpt-image-1.5", "dall-e-3", "imagen-4")
-- `quality`: "auto" | "high" | "medium" | "low" (default: "auto")
-- `size`: "auto", presets like "1024x1024" / "1536x1024" / "1024x1536" / "3840x2160", or (for `gpt-image-2`) any `WxH` within the model's constraints (default: "1536x1024"). Accepted values are model-dependent.
+- `model` (optional): Model to use (e.g., "gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "gpt-image-2", "imagen-4"). Defaults to `IMAGES__DEFAULT_MODEL` (gpt-image-2.5-sunburst)
+- `quality`: "auto" | "low" | "medium" | "high" | "xhigh" | "max" (default: "auto"). `xhigh` and `max` exist only on the gpt-image-2.5 models; other models get `high` instead
+- `size`: "auto", presets like "1024x1024" / "1536x1024" / "1024x1536" / "3840x2160", or (for `gpt-image-2` and the gpt-image-2.5 models) any `WxH` within the model's constraints (default: "1536x1024"). Accepted values are model-dependent.
 - `style`: "vivid" | "natural" (default: "vivid")
 - `output_format`: "png" | "jpeg" | "webp" (default: "png")
 - `background`: "auto" | "transparent" | "opaque" (default: "auto")
@@ -347,14 +347,26 @@ Edit existing images with text instructions.
 - `image_data` (required): Base64 encoded image or data URL
 - `prompt` (required): Edit instructions
 - `mask_data`: Optional mask for targeted editing
-- `size`, `quality`, `output_format`: Same as generate_image
+- `size`, `quality`, `output_format`, `background`: Same as generate_image
+- `model` (optional): OpenAI GPT Image model for the edit (e.g. "gpt-image-2.5-sunburst", "gpt-image-2.5-flare"). Defaults to `IMAGES__DEFAULT_MODEL`
+
+### Getting exact text in images
+
+For shop signs, posters, labels and other lettering, use `gpt-image-2.5-sunburst` and pin the text down in the prompt:
+
+- Quote the exact string and say how many times it appears: `The sign reads exactly "HARROWFIELD ARCADE", once.`
+- State the font or lettering style, the placement, and the language and spelling (spell unusual names letter by letter if they come out wrong).
+- End with "No other text."
+- Draft at `low` quality, compare `medium` and `high` for finals, and only reach for `xhigh` or `max` when a lower setting still gets the letters wrong.
+
+Always read the result letter by letter. See [Getting Exact Text in Images](docs/openai_images_api_guide.md#getting-exact-text-in-images) for the full checklist.
 
 ## Available Resources
 
 - `generated-images://{image_id}` - Access specific generated images
 - `image-history://recent` - Browse recent generation history
 - `storage-stats://overview` - Storage usage and statistics
-- `model-info://gpt-image-2` - Model capabilities and pricing (also available for gpt-image-1.5, gpt-image-1, dall-e-3, dall-e-2)
+- `model-info://gpt-image-2.5-sunburst` - Model capabilities and pricing (also available for gpt-image-2.5-flare, gpt-image-2, gpt-image-1.5, gpt-image-1 and the Imagen models)
 
 ## Prompt Templates
 
@@ -404,8 +416,8 @@ PROVIDERS__GEMINI__DEFAULT_MODEL=imagen-4
 # =============================================================================
 # Image Generation Settings
 # =============================================================================
-IMAGES__DEFAULT_MODEL=gpt-image-2
-IMAGES__DEFAULT_QUALITY=auto
+IMAGES__DEFAULT_MODEL=gpt-image-2.5-sunburst  # also the default edit model
+IMAGES__DEFAULT_QUALITY=auto  # auto | low | medium | high | xhigh | max
 IMAGES__DEFAULT_SIZE=1536x1024
 IMAGES__DEFAULT_STYLE=vivid
 IMAGES__DEFAULT_MODERATION=auto
@@ -620,7 +632,7 @@ For issues and questions:
 
 ---
 
-**Built with ❤️ using the Model Context Protocol and OpenAI's gpt-image-2**
+**Built with ❤️ using the Model Context Protocol and OpenAI's GPT Image models**
 
 ## The Future of AI Integration
 

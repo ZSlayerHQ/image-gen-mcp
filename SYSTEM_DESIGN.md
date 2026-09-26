@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides a comprehensive technical overview of the Image Gen MCP Server, a Model Context Protocol (MCP) server that integrates OpenAI's gpt-image family (gpt-image-2, gpt-image-1.5, gpt-image-1), DALL-E, and Google's Imagen series for text-to-image generation and editing services.
+This document provides a comprehensive technical overview of the Image Gen MCP Server, a Model Context Protocol (MCP) server that integrates OpenAI's gpt-image family (gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2, gpt-image-1.5, gpt-image-1), DALL-E, and Google's Imagen series for text-to-image generation and editing services.
 
 ## Architecture
 
@@ -93,9 +93,9 @@ redis  # Optional caching backend
 
 ### OpenAI Images API Integration
 
-#### Models: gpt-image-2 / gpt-image-1.5 / gpt-image-1
+#### Models: gpt-image-2.5-sunburst / gpt-image-2.5-flare / gpt-image-2 / gpt-image-1.5 / gpt-image-1
 
-The server integrates with OpenAI's image generation models using the Images API endpoints. `gpt-image-2` is the current default — it adds flexible sizing (any `WxH` where both edges are multiples of 16, max edge 3840px, aspect ≤3:1), supports 4K output (`3840x2160`), and is cheaper than gpt-image-1.5 ($30 vs $32 per 1M image output tokens).
+The server integrates with OpenAI's image generation models using the Images API endpoints. `gpt-image-2.5-sunburst` (released 2026-09-08) is the current default, chosen for its image quality, editing precision and exact lettering; `gpt-image-2.5-flare` is the faster GPT Image 2.5 model. Both keep `gpt-image-2`'s flexible sizing (any `WxH` where both edges are multiples of 16, max edge 3840px, aspect ≤3:1, up to 4K), support transparent backgrounds natively, add the `xhigh` and `max` quality tiers, and bill at gpt-image-2's token rates ($30 per 1M image output tokens). `OpenAIProvider._resolve_quality` steps `xhigh`/`max` down to `high` for models without them. The `edit_image` tool takes an optional `model` and otherwise uses `IMAGES__DEFAULT_MODEL`.
 
 #### 1. Image Generation Endpoint
 
@@ -722,7 +722,7 @@ PROVIDERS__GEMINI__DEFAULT_MODEL=imagen-4
 # =============================================================================
 # Image Generation Settings
 # =============================================================================
-IMAGES__DEFAULT_MODEL=gpt-image-2
+IMAGES__DEFAULT_MODEL=gpt-image-2.5-sunburst
 IMAGES__DEFAULT_QUALITY=auto
 IMAGES__DEFAULT_SIZE=1536x1024
 IMAGES__DEFAULT_STYLE=vivid

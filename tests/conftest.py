@@ -77,7 +77,7 @@ def mock_cache_settings():
 def mock_image_settings():
     """Mock image settings for testing."""
     return ImageSettings(
-        default_model="gpt-image-2",
+        default_model="gpt-image-2.5-sunburst",
         default_quality="auto",
         default_size="1024x1024",
         default_style="vivid",

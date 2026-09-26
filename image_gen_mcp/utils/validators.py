@@ -134,11 +134,18 @@ def get_common_aliases(enum_class: type) -> dict[str, str]:
                 "quick": "low",
                 "draft": "low",
                 "preview": "low",
+                # gpt-image-2.5 tiers above high
+                "extra high": "xhigh",
+                "extra-high": "xhigh",
+                "extra_high": "xhigh",
+                "x-high": "xhigh",
                 # Numeric aliases
                 "0": "auto",
                 "1": "low",
                 "2": "medium",
                 "3": "high",
+                "4": "xhigh",
+                "5": "max",
             }
         )
 
@@ -184,7 +191,8 @@ def validate_image_size(value: Any) -> ImageSize | str:
 
     Raw ``WIDTHxHEIGHT`` strings that don't map to a standard ``ImageSize``
     are passed through unchanged so providers that support custom sizes
-    (e.g. ``gpt-image-2``) can apply their own constraints downstream.
+    (``gpt-image-2`` and the ``gpt-image-2.5`` models) can apply their own
+    constraints downstream.
     """
     if isinstance(value, str):
         normalized = value.strip().lower()

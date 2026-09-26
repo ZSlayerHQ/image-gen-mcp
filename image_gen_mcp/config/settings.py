@@ -134,9 +134,19 @@ class ProvidersSettings(BaseModel):
 class ImageSettings(BaseModel):
     """Image generation default settings."""
 
-    default_model: str = Field("gpt-image-2", description="Default image model")
-    default_quality: Literal["auto", "high", "medium", "low"] = Field(
-        "auto", description="Default quality"
+    default_model: str = Field(
+        "gpt-image-2.5-sunburst",
+        description=(
+            "Default image model. Also the model edit_image uses when the "
+            "call names none."
+        ),
+    )
+    default_quality: Literal["auto", "max", "xhigh", "high", "medium", "low"] = Field(
+        "auto",
+        description=(
+            "Default quality. 'xhigh' and 'max' exist only on the gpt-image-2.5 "
+            "models; other models step them down to 'high'."
+        ),
     )
     default_size: str = Field(
         "1536x1024",
@@ -173,7 +183,8 @@ class ImageSettings(BaseModel):
         Accepts 'auto' or a well-formed 'WxH' string (two positive integers
         separated by 'x'). Model-specific constraints (multiples of 16,
         aspect ratio, pixel count) are enforced by the provider at request
-        time so custom sizes for gpt-image-2 still flow through.
+        time so custom sizes for gpt-image-2 and the gpt-image-2.5 models
+        still flow through.
         """
         if not isinstance(v, str):
             raise ValueError("default_size must be a string")
