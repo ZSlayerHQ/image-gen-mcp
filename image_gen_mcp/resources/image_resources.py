@@ -71,6 +71,7 @@ class ImageResourceManager:
             # Format for display
             formatted_images = []
             for image_metadata in recent_images:
+                cost_info = image_metadata.get("cost_info", {})
                 formatted_image = {
                     "image_id": image_metadata.get("image_id"),
                     "created_at": image_metadata.get("created_at"),
@@ -84,10 +85,16 @@ class ImageResourceManager:
                     "dimensions": image_metadata.get("file_info", {}).get("dimensions"),
                     "format": image_metadata.get("file_info", {}).get("format"),
                     "parameters": image_metadata.get("parameters", {}),
-                    "cost_estimate": image_metadata.get("cost_info", {}).get(
-                        "estimated_cost_usd"
-                    ),
+                    "cost_estimate": cost_info.get("estimated_cost_usd"),
                 }
+                # Batch shares and reference-edit caveats travel with the
+                # estimate; entries without them are listed as before.
+                if "batch_index" in image_metadata:
+                    formatted_image["batch_index"] = image_metadata["batch_index"]
+                if cost_info.get("scope"):
+                    formatted_image["cost_scope"] = cost_info["scope"]
+                if cost_info.get("note"):
+                    formatted_image["cost_note"] = cost_info["note"]
                 formatted_images.append(formatted_image)
 
             result = {

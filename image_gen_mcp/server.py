@@ -13,10 +13,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field, ValidationError
+from pydantic.fields import FieldInfo
 
 from .config.settings import Settings
 from .prompts.template_manager import template_manager
@@ -341,6 +342,12 @@ def get_server_context(ctx) -> ServerContext:
     return ctx.request_context.lifespan_context
 
 
+def _given(value: Any, default: Any) -> Any:
+    """Return a tool argument's value, or its default when the tool function was
+    called directly (not through MCP) and the argument arrived as its Field."""
+    return default if isinstance(value, FieldInfo) else value
+
+
 # Tool definitions
 @mcp.tool(title="Health Check", description="Check server health and status")
 async def health_check() -> dict[str, Any]:
@@ -566,6 +573,16 @@ async def generate_image(
         default="auto",
         description="Background type: auto, transparent, opaque (OpenAI models only)",
     ),
+    n: int = Field(
+        default=1,
+        ge=1,
+        le=10,
+        description=(
+            "Number of images to generate in one request, 1-10 (gpt-image-2 and "
+            "gpt-image-2.5 models). Every image is billed. The first image is "
+            "returned as usual; the rest are listed in additional_images, in order."
+        ),
+    ),
 ) -> dict[str, Any]:
     """
     Generate an image from a text prompt using multiple AI providers.
@@ -584,6 +601,8 @@ async def generate_image(
       * With base_host: full CDN/nginx URL with date path structure
     - resource_uri: MCP resource URI for future access
     - metadata: Generation details and parameters including model and provider info
+    - additional_images: only when n > 1, the other images in order, each with
+      image_id, image_url, resource_uri, local_path and file_size_bytes
     """
     ctx = mcp.get_context()
     server_ctx = get_server_context(ctx)
@@ -609,6 +628,7 @@ async def generate_image(
             output_format=validated_output_format,
             compression=validated_compression,
             background=validated_background,
+            n=_given(n, 1),
         )
         return result
     except Exception as e:
@@ -667,6 +687,30 @@ async def edit_image(
             "configured default model."
         ),
     ),
+    additional_images: Optional[list[str]] = Field(
+        default=None,
+        max_length=15,
+        description=(
+            "Up to 15 more input images (base64 or data URLs), sent after "
+            "image_data. image_data is Image 1 and these are Image 2, Image 3 "
+            "and so on, in order; refer to them that way in the prompt. A mask "
+            "applies to image_data only."
+        ),
+    ),
+    moderation: Literal["auto", "low"] = Field(
+        default="auto",
+        description="Content moderation level: auto or low",
+    ),
+    n: int = Field(
+        default=1,
+        ge=1,
+        le=10,
+        description=(
+            "Number of edited images to return, 1-10. Every image is billed. The "
+            "first is returned as usual; the rest are listed in "
+            "additional_images, in order."
+        ),
+    ),
 ) -> dict[str, Any]:
     """
     Edit an existing image with text instructions.
@@ -681,6 +725,9 @@ async def edit_image(
     - resource_uri: MCP resource URI for future access
     - operation: "edit" to indicate this was an edit operation
     - metadata: Edit details and parameters
+    - additional_images: only when n > 1, the other edited images in order,
+      each with image_id, image_url, resource_uri, local_path and
+      file_size_bytes (output descriptors, not the input list of that name)
     """
     ctx = mcp.get_context()
     server_ctx = get_server_context(ctx)
@@ -689,6 +736,12 @@ async def edit_image(
     validated_image_data = validate_base64_image(image_data)
     validated_prompt = sanitize_prompt(prompt)
     validated_mask_data = validate_base64_image(mask_data) if mask_data else None
+    additional_images = _given(additional_images, None)
+    validated_additional_images = (
+        [validate_base64_image(extra) for extra in additional_images]
+        if additional_images
+        else None
+    )
     validated_size = validate_image_size(size)
     validated_quality = validate_image_quality(quality)
     validated_output_format = validate_output_format(output_format)
@@ -706,6 +759,9 @@ async def edit_image(
             compression=validated_compression,
             background=validated_background,
             model=model,
+            additional_images=validated_additional_images,
+            moderation=_given(moderation, "auto"),
+            n=_given(n, 1),
         )
         return result
     except Exception as e:

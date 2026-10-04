@@ -21,6 +21,12 @@ from ..types.enums import (
 )
 from ..utils.cache import CacheManager
 from ..utils.path_utils import build_image_url_path
+from .batch import (
+    BATCH_CAPABLE_MODELS,
+    PartialSaveError,
+    partial_save_message,
+    per_image_cost_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +179,14 @@ class ImageGenerationTool:
         output_format: OutputFormat | str = OutputFormat.PNG,
         compression: int = 100,
         background: BackgroundType | str = BackgroundType.AUTO,
+        n: int = 1,
     ) -> dict[str, Any]:
-        """Generate an image from a text prompt using the specified or default model."""
+        """Generate an image from a text prompt using the specified or default model.
+
+        ``n`` (1-10) asks for several images in one request where the model
+        supports it; the first is returned as before and the rest are listed in
+        ``additional_images``.
+        """
 
         # Ensure providers are registered
         await self._ensure_providers_registered()
@@ -228,6 +240,24 @@ class ImageGenerationTool:
                 "available or misconfigured"
             )
 
+        # Several images only where the model returns them: a silently clamped
+        # batch would come back short. Checked before the cache and the API.
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 10:
+            raise ValueError("n must be an integer from 1 to 10")
+        if n > 1:
+            if target_model not in BATCH_CAPABLE_MODELS:
+                raise ValueError(
+                    "Several images per request (n > 1) are supported only for "
+                    f"{', '.join(sorted(BATCH_CAPABLE_MODELS))}, not '{target_model}'."
+                )
+            capabilities = provider.get_model_capabilities(target_model)
+            max_n = capabilities.max_images_per_request if capabilities else 1
+            if n > max_n:
+                raise ValueError(
+                    f"Model '{target_model}' returns at most {max_n} image(s) "
+                    f"per request, so n={n} is not supported for it."
+                )
+
         # Generate task ID for tracking
         task_id = str(uuid.uuid4())
 
@@ -243,6 +273,10 @@ class ImageGenerationTool:
             "background": background_str,
             "model": target_model,
         }
+        # Only a non-default count enters the params, so single-image cache
+        # keys are unchanged.
+        if n != 1:
+            params["n"] = n
 
         # Check cache first
         cached_result = await self.cache_manager.get_image_generation(**params)
@@ -272,14 +306,18 @@ class ImageGenerationTool:
                 output_format=validated_params.get("output_format", output_format_str),
                 compression=validated_params.get("compression", compression),
                 background=validated_params.get("background", background_str),
-                n=1,
+                n=validated_params.get("n", n),
             )
+            extra_images = list(provider_response.additional_images or [])
+            images_returned = 1 + len(extra_images)
+            batch = n > 1 or bool(extra_images)
 
-            # Estimate cost (quality/size-aware for gpt-image-2 and 2.5)
+            # Estimate cost (quality/size-aware for gpt-image-2 and 2.5),
+            # counting every image the request returned
             cost_info = provider.estimate_cost(
                 target_model,
                 prompt,
-                1,
+                images_returned,
                 quality=validated_params.get("quality", quality_str),
                 size=validated_params.get("size", size_str),
             )
@@ -294,18 +332,56 @@ class ImageGenerationTool:
                 "cost_info": cost_info,
                 "provider_metadata": provider_response.metadata,
             }
+            file_format = validated_params.get("output_format", output_format_str)
 
-            # Save to local storage
-            image_id, image_path = await self.storage_manager.save_image(
-                image_data=provider_response.image_data,
-                metadata=metadata,
-                file_format=validated_params.get("output_format", output_format_str),
-            )
+            if batch:
+                # Save every image of a batch in order, each storing its share
+                # of the request's cost. A failed save never triggers another
+                # call: the request was already billed.
+                stored_cost = per_image_cost_info(cost_info, images_returned)
+                all_images = [provider_response.image_data, *extra_images]
+                saved: list[tuple[str, Path]] = []
+                for index, data in enumerate(all_images):
+                    try:
+                        saved.append(
+                            await self.storage_manager.save_image(
+                                image_data=data,
+                                metadata={
+                                    **metadata,
+                                    "cost_info": stored_cost,
+                                    "batch_index": index,
+                                },
+                                file_format=file_format,
+                            )
+                        )
+                    except Exception as e:
+                        raise PartialSaveError(
+                            partial_save_message(
+                                "Image generation", index, images_returned, saved, e
+                            )
+                        ) from e
+                image_id, image_path = saved[0]
+                additional_results = [
+                    {
+                        "image_id": extra_id,
+                        "image_url": self._build_image_url(extra_id, file_format),
+                        "resource_uri": f"generated-images://{extra_id}",
+                        "local_path": str(extra_path),
+                        "file_size_bytes": len(data),
+                    }
+                    for (extra_id, extra_path), data in zip(saved[1:], extra_images)
+                ]
+            else:
+                # Save to local storage
+                image_id, image_path = await self.storage_manager.save_image(
+                    image_data=provider_response.image_data,
+                    metadata=metadata,
+                    file_format=file_format,
+                )
+                additional_results = []
 
             # Build image URL instead of base64 data
-            image_url = self._build_image_url(
-                image_id, validated_params.get("output_format", output_format_str)
-            )
+            image_url = self._build_image_url(image_id, file_format)
 
             # Prepare result
             result = {
@@ -334,6 +410,11 @@ class ImageGenerationTool:
                     ).upper(),
                 },
             }
+            if batch:
+                result["metadata"]["images_requested"] = n
+                result["metadata"]["images_returned"] = images_returned
+                result["metadata"]["cost_estimate_scope"] = "request_total"
+                result["additional_images"] = additional_results
 
             # Cache the result
             await self.cache_manager.set_image_generation(result, **params)
@@ -344,6 +425,9 @@ class ImageGenerationTool:
             )
             return result
 
+        except PartialSaveError:
+            logger.error(f"Partial save for task {task_id}")
+            raise
         except ProviderError as e:
             logger.error(f"Provider error for task {task_id}: {e}")
             raise RuntimeError(f"Image generation failed: {str(e)}")

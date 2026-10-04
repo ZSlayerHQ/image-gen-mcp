@@ -43,6 +43,8 @@ class ImageResponse:
     image_data: bytes
     metadata: dict[str, Any] = field(default_factory=dict)
     provider_response: dict[str, Any] | None = None
+    # Images after the first when a request returns several (n > 1), in order.
+    additional_images: list[bytes] = field(default_factory=list)
 
 
 @dataclass

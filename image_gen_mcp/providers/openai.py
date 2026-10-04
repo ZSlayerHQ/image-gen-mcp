@@ -202,7 +202,8 @@ class OpenAIProvider(LLMProvider):
         ],
         supported_qualities=["auto", "high", "medium", "low"],
         supported_formats=["png", "jpeg", "webp"],
-        max_images_per_request=1,
+        # The Images API accepts n from 1 to 10 for GPT Image models.
+        max_images_per_request=10,
         supports_style=False,
         supports_background=True,
         supports_compression=True,
@@ -233,7 +234,7 @@ class OpenAIProvider(LLMProvider):
         ],
         supported_qualities=["auto", "max", "xhigh", "high", "medium", "low"],
         supported_formats=["png", "jpeg", "webp"],
-        max_images_per_request=1,
+        max_images_per_request=10,
         supports_style=False,
         supports_background=True,
         supports_compression=True,
@@ -515,19 +516,28 @@ class OpenAIProvider(LLMProvider):
 
             response = await self.client.images.generate(**request_params)
 
-            # Process response
-            if hasattr(response.data[0], "b64_json") and response.data[0].b64_json:
-                # Base64 response (gpt-image-1)
-                image_bytes = base64.b64decode(response.data[0].b64_json)
-            elif hasattr(response.data[0], "url") and response.data[0].url:
-                # URL response (DALL-E models)
-                image_bytes = await self._download_image(response.data[0].url)
-            else:
+            # Process every returned image, in order (n > 1 returns several)
+            images: list[bytes] = []
+            for item in response.data or []:
+                if getattr(item, "b64_json", None):
+                    # Base64 response (gpt-image models)
+                    images.append(base64.b64decode(item.b64_json))
+                elif getattr(item, "url", None):
+                    # URL response (DALL-E models)
+                    images.append(await self._download_image(item.url))
+                else:
+                    raise ProviderError(
+                        "OpenAI response contains neither base64 data nor URL",
+                        provider_name=self.name,
+                        error_code="INVALID_RESPONSE",
+                    )
+            if not images:
                 raise ProviderError(
-                    "OpenAI response contains neither base64 data nor URL",
+                    "OpenAI response contains no images",
                     provider_name=self.name,
                     error_code="INVALID_RESPONSE",
                 )
+            image_bytes = images[0]
 
             # Build metadata
             metadata = {
@@ -555,6 +565,7 @@ class OpenAIProvider(LLMProvider):
                 provider_response=(
                     response.model_dump() if hasattr(response, "model_dump") else None
                 ),
+                additional_images=images[1:],
             )
 
         except Exception as e:

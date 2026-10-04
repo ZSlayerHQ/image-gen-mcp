@@ -113,8 +113,14 @@ class OpenAIClientManager:
         compression: int = 100,
         background: str = "auto",
         n: int = 1,
+        additional_images: list[str | bytes] | None = None,
+        moderation: str = "auto",
     ) -> ImagesResponse:
-        """Edit an image using OpenAI's Images API."""
+        """Edit an image using OpenAI's Images API.
+
+        ``additional_images`` are sent after ``image_data``, in order, as
+        further input images (the API takes up to 16 in total).
+        """
 
         # Coerce enum inputs (ImageQuality, ImageSize, ImageFormat, etc.) to
         # their string values so the OpenAI SDK receives valid literals
@@ -131,6 +137,9 @@ class OpenAIClientManager:
 
         # Decode inputs and build SDK upload tuples.
         _, _, image_file = prepare_image_upload(image_data)
+        extra_files = [
+            prepare_image_upload(extra)[2] for extra in (additional_images or [])
+        ]
 
         mask_file = None
         if mask_data:
@@ -146,7 +155,8 @@ class OpenAIClientManager:
 
         request_params = {
             "model": model,
-            "image": image_file,
+            # Several inputs go as a list, the primary first; one stays a tuple.
+            "image": [image_file, *extra_files] if extra_files else image_file,
             "prompt": prompt,
             "n": n,
             "size": size,
@@ -154,6 +164,12 @@ class OpenAIClientManager:
 
         if mask_file:
             request_params["mask"] = mask_file
+
+        # The SDK's images.edit has no moderation argument, so a non-default
+        # level travels in the request body; "auto" (the API default) sends none.
+        moderation = getattr(moderation, "value", moderation)
+        if moderation and moderation != "auto":
+            request_params["extra_body"] = {"moderation": moderation}
 
         # Add gpt-image-1 family specific parameters
         if model.startswith("gpt-image-"):
